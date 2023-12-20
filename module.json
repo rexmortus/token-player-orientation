@@ -1,6 +1,6 @@
 {
-  "id": "module",
-  "title": "New Module",
+  "id": "token-player-orientation",
+  "title": "Token Player Orientation",
   "description": "",
   "version": "#{VERSION}#",
   "library": "false",
@@ -12,9 +12,9 @@
   },
   "authors": [
     {
-      "name": "The League of Extraordinary FVTT Developers",
-      "url": "https://github.com/League-of-Foundry-Developers",
-      "discord": "discordID#0001"
+      "name": "Rexmortus",
+      "url": "https://github.com/rexmortus",
+      "discord": "rexmortus"
     }
   ],
   "relationships": {
@@ -28,7 +28,6 @@
     "scripts/lib/lib.js"
   ],
   "styles": [
-    "styles/module.css"
   ],
   "languages": [
     {
