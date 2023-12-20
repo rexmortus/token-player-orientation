@@ -16,7 +16,8 @@ Hooks.on('renderTokenConfig', (app,[html],data) => {
 
 Hooks.on('updateCombat', function(combat, html, data, anotherThing) {
 
-    if (game.settings.get('monks-common-display', 'hide-ui') === true) {
+    if (game.settings.get('monks-common-display', 'playerdata')[game.users.current._id].display === true) {
+
         let token = combat.combatant.token;
 
         let $canvas = $('canvas');
