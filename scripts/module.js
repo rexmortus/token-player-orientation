@@ -47,9 +47,7 @@ function centerOnToken(token, zoom=true) {
     
         // Adjust the scale calculation
         let scale = Math.min(canvas.dimensions.width, canvas.dimensions.height) / (visionRangePixels * 14);
-    
-        // debugger;
-        
+            
         // Ensure scale is within sensible bounds
         scale = Math.max(0.1, Math.min(scale, 2));
         
@@ -66,8 +64,6 @@ function centerOnToken(token, zoom=true) {
             y: token.y
         });
     }
-
-    
 
 }
 
@@ -93,6 +89,54 @@ function canTokenSeeToken(observerToken, targetToken) {
 
     return false; // Target is out of vision range
 }
+
+function canAnyOwnedTokenSeeMovingToken(movingToken) {
+    
+    // Get all tokens owned by the current user
+    let ownedTokens = canvas.tokens.ownedTokens;
+
+    // Check each owned token for line of sight and vision range to the moving token
+    return ownedTokens.some(ownedToken => {
+
+        // Check line of sight
+        const losBlocked = canvas.walls.checkCollision(new Ray(ownedToken.center, movingToken.center), {
+            mode: "any",
+            type: "move"
+        });
+        if (losBlocked) return false; // Line of sight is blocked
+
+        // Calculate distance between tokens
+        const distance = canvas.grid.measureDistance(ownedToken, movingToken);
+
+        // Check if the moving token is within the owned token's vision range
+        return distance <= ownedToken.document.sight.range;
+    });
+}
+
+function panToCenterpointOfTokens(tokens) {
+
+    // Initialize sums of X and Y coordinates
+    let sumX = 0;
+    let sumY = 0;
+
+    // Add up the X and Y coordinates of each token
+    tokens.forEach(token => {
+        sumX += token.x;
+        sumY += token.y;
+    });
+
+    // Calculate the average X and Y coordinates
+    let centerX = sumX / tokens.length;
+    let centerY = sumY / tokens.length;
+
+    canvas.animatePan({
+        x: centerX,
+        y: centerY,
+        scale: 0.5
+    });
+
+}
+
 
 Hooks.on('updateCombat', function(combat, html, data, anotherThing) {
 
@@ -148,15 +192,29 @@ Hooks.on("refreshToken", (token, updateData, ...args) => {
         let observerToken = canvas.tokens.controlled[0];
         let targetToken = canvas.tokens.get(token.id);
 
-        if (observerToken.id === targetToken.id) {
-            centerOnToken(observerToken.document)
-        } else if (canTokenSeeToken(observerToken, targetToken)) 
-            centerOnToken(targetToken.document, false);
-        else {
-            centerOnToken(observerToken.document);
-        }
-        
-        
+        if (observerToken) {
+            
+            if (observerToken.id === targetToken.id) {
+                centerOnToken(observerToken.document)
+            }
+
+            else if (canTokenSeeToken(observerToken, targetToken)) {
+                centerOnToken(targetToken.document, false);
+            }
+            
+            else {
+                centerOnToken(observerToken.document)
+            }
+
+        } else {
+
+            if (canAnyOwnedTokenSeeMovingToken(targetToken)) {
+                centerOnToken(targetToken.document, false);
+            } else {
+                panToCenterpointOfTokens(canvas.tokens.ownedTokens)
+            }
+
+        }  
         
     }
 
