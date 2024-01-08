@@ -33,31 +33,65 @@ function calculateShortestRotation(currentRotation, targetRotation) {
     return delta;
 }
 
-function centerOnToken(token) {
+function centerOnToken(token, zoom=true) {
 
-    let feetPerSquare = 5;
+    if(zoom) {
+        
+        let feetPerSquare = 5;
 
-    let visionRangeFeet = token.sight.range
-    let visionRangeSquares = visionRangeFeet / feetPerSquare;
-
-    // Convert the vision range from squares to pixels
-    let visionRangePixels = visionRangeSquares * canvas.grid.size;
-
-    // Adjust the scale calculation
-    let scale = Math.min(canvas.dimensions.width, canvas.dimensions.height) / (visionRangePixels * 13);
-
-    // debugger;
+        let visionRangeFeet = token.sight.range
+        let visionRangeSquares = visionRangeFeet / feetPerSquare;
     
-    // Ensure scale is within sensible bounds
-    scale = Math.max(0.1, Math.min(scale, 2));
+        // Convert the vision range from squares to pixels
+        let visionRangePixels = visionRangeSquares * canvas.grid.size;
+    
+        // Adjust the scale calculation
+        let scale = Math.min(canvas.dimensions.width, canvas.dimensions.height) / (visionRangePixels * 14);
+    
+        // debugger;
+        
+        // Ensure scale is within sensible bounds
+        scale = Math.max(0.1, Math.min(scale, 2));
+        
+        // Center and zoom on the token
+        canvas.animatePan({
+            x: token.x,
+            y: token.y,
+            scale: scale
+        });
+    } else {
+        // Center and zoom on the token
+        canvas.animatePan({
+            x: token.x,
+            y: token.y
+        });
+    }
 
-    // Center and zoom on the token
-    canvas.animatePan({
-        x: token.x,
-        y: token.y,
-        scale: scale
+    
+
+}
+
+function canTokenSeeToken(observerToken, targetToken) {
+    
+    // Check if the observer has line of sight to the target
+    let losBlocked = canvas.walls.checkCollision(new Ray(observerToken.center, targetToken.center), {
+        mode: "any",
+        type: "move"
     });
+    
+    if (losBlocked) {
+        return false; // Line of sight is blocked
+    }
 
+    // Calculate distance between tokens
+    let distance = Math.floor(canvas.grid.measureDistance(observerToken, targetToken));
+
+    // Check if the target is within the observer's vision range
+    if (distance <= observerToken.document.sight.range) {
+        return true;
+    }
+
+    return false; // Target is out of vision range
 }
 
 Hooks.on('updateCombat', function(combat, html, data, anotherThing) {
@@ -107,10 +141,23 @@ Hooks.on('updateCombat', function(combat, html, data, anotherThing) {
 })
 
 Hooks.on("refreshToken", (token, updateData, ...args) => {
+    
 
     if (game.settings.get('monks-common-display', 'playerdata')[game.users.current._id].display === true) { 
         
-        centerOnToken(canvas.tokens.get(token.id).document);
+        let observerToken = canvas.tokens.controlled[0];
+        let targetToken = canvas.tokens.get(token.id);
+
+        if (observerToken.id === targetToken.id) {
+            centerOnToken(observerToken.document)
+        } else if (canTokenSeeToken(observerToken, targetToken)) 
+            centerOnToken(targetToken.document, false);
+        else {
+            centerOnToken(observerToken.document);
+        }
+        
+        
+        
     }
 
 })
