@@ -14,31 +14,56 @@ Hooks.on('renderTokenConfig', (app,[html],data) => {
 
 })
 
+function normalizeRadians(angle) {
+    // Normalize the angle between 0 and 2π
+    angle = angle % (2 * Math.PI);
+    if (angle < 0) angle += (2 * Math.PI);
+    return angle;
+}
+
+function calculateShortestRotation(currentRotation, targetRotation) {
+    currentRotation = normalizeRadians(currentRotation);
+    targetRotation = normalizeRadians(targetRotation);
+
+    let delta = targetRotation - currentRotation;
+    // Normalize the delta angle to be between -π and π
+    if (delta > Math.PI) delta -= 2 * Math.PI;
+    if (delta < -Math.PI) delta += 2 * Math.PI;
+
+    return delta;
+}
+
+function centerOnToken(token) {
+
+    let feetPerSquare = 5;
+
+    let visionRangeFeet = token.sight.range
+    let visionRangeSquares = visionRangeFeet / feetPerSquare;
+
+    // Convert the vision range from squares to pixels
+    let visionRangePixels = visionRangeSquares * canvas.grid.size;
+
+    // Adjust the scale calculation
+    let scale = Math.min(canvas.dimensions.width, canvas.dimensions.height) / (visionRangePixels * 13);
+
+    // debugger;
+    
+    // Ensure scale is within sensible bounds
+    scale = Math.max(0.1, Math.min(scale, 2));
+
+    // Center and zoom on the token
+    canvas.animatePan({
+        x: token.x,
+        y: token.y,
+        scale: scale
+    });
+
+}
+
 Hooks.on('updateCombat', function(combat, html, data, anotherThing) {
 
     if (game.settings.get('monks-common-display', 'playerdata')[game.users.current._id].display === true) {
 
-        function normalizeRadians(angle) {
-            // Normalize the angle between 0 and 2π
-            angle = angle % (2 * Math.PI);
-            if (angle < 0) angle += (2 * Math.PI);
-            return angle;
-        }
-        
-        function calculateShortestRotation(currentRotation, targetRotation) {
-            currentRotation = normalizeRadians(currentRotation);
-            targetRotation = normalizeRadians(targetRotation);
-            console.log(currentRotation);
-            console.log(targetRotation);
-        
-            let delta = targetRotation - currentRotation;
-            // Normalize the delta angle to be between -π and π
-            if (delta > Math.PI) delta -= 2 * Math.PI;
-            if (delta < -Math.PI) delta += 2 * Math.PI;
-        
-            return delta;
-        }
-        
         // Get the current combatant token
         let token = combat.combatant.token;
         
@@ -53,7 +78,7 @@ Hooks.on('updateCombat', function(combat, html, data, anotherThing) {
 
         let delta = calculateShortestRotation(currentRotation, targetRotation);
         let duration = 1; // duration in seconds
-        let rotationPerFrame = delta / (5 * duration);
+        let rotationPerFrame = delta / (20 * duration);
 
         function animate() {
 
@@ -71,19 +96,21 @@ Hooks.on('updateCombat', function(combat, html, data, anotherThing) {
    
         animate();
         
-        // Pan to the  token
-        let position = canvas.tokens.get(combat.combatant.tokenId).position
-        let x = position.x
-        let y = position.y
-        let scale = canvas.stage.scale._x
-
-        setTimeout(function() {
-            canvas.app.stage.rotation = normalizeRadians(canvas.app.stage.rotation)
-            canvas.animatePan({x,y,scale})
-            token.control()
-        },50)
-
+        canvas.app.stage.rotation = normalizeRadians(canvas.app.stage.rotation)
+        centerOnToken(token)
+        canvas.tokens.get(token.id).control({releaseOthers: true})
         
+    } else {
+        return;
+    }
+
+})
+
+Hooks.on("refreshToken", (token, updateData, ...args) => {
+
+    if (game.settings.get('monks-common-display', 'playerdata')[game.users.current._id].display === true) { 
+        
+        centerOnToken(canvas.tokens.get(token.id).document);
     }
 
 })
