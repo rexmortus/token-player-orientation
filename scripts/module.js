@@ -72,8 +72,15 @@ function calculateScaleForAllTokens(tokens) {
         let visionRange = token.document.sight.range;
         let gridSize = canvas.scene.grid.size;
         let gridDistance = canvas.scene.grid.distance;
-        let visionPixels = (visionRange + buffer) * (gridSize / gridDistance);
 
+        let visionPixels;
+        // Only include vision for owned tokens
+        if (canvas.tokens.ownedTokens.includes(token)) {
+            visionPixels = (visionRange + buffer) * (gridSize / gridDistance);
+        } else {
+            visionPixels = 0;
+        }
+        
         let x1 = token.x - visionPixels;
         let y1 = token.y - visionPixels;
         let x2 = token.x + visionPixels;
