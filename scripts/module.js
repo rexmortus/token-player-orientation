@@ -15,13 +15,15 @@ Hooks.on('renderTokenConfig', (app,[html],data) => {
 })
 
 function normalizeRadians(angle) {
-    // Normalize the angle between 0 and 2π
+
     angle = angle % (2 * Math.PI);
     if (angle < 0) angle += (2 * Math.PI);
     return angle;
+
 }
 
 function calculateShortestRotation(currentRotation, targetRotation) {
+
     currentRotation = normalizeRadians(currentRotation);
     targetRotation = normalizeRadians(targetRotation);
 
@@ -31,49 +33,113 @@ function calculateShortestRotation(currentRotation, targetRotation) {
     if (delta < -Math.PI) delta += 2 * Math.PI;
 
     return delta;
+
 }
 
-function centerOnToken(token, zoom=true) {
+// This function takes a token and calculates the appropriate scale 
+// for showing the entire token's vision within the canvas
 
-    if(zoom) {
-        
-        let feetPerSquare = 5;
+function calculateVisionScaleForToken(token) {
 
-        let visionRangeFeet = token.sight.range
-        let visionRangeSquares = visionRangeFeet / feetPerSquare;
-    
-        // Convert the vision range from squares to pixels
-        let visionRangePixels = visionRangeSquares * canvas.grid.size;
-    
-        // Adjust the scale calculation
-        let scale = Math.min(canvas.dimensions.width, canvas.dimensions.height) / (visionRangePixels * 14);
-            
-        // Ensure scale is within sensible bounds
-        scale = Math.max(0.1, Math.min(scale, 2));
+    // Token's vision range and grid information
+    let visionRange = token.document.sight.range;
+    let gridDistance = canvas.scene.grid.distance;
+    let gridSize = canvas.scene.grid.size;
+
+    // Calculate total vision area in pixels (vision range + buffer)
+    let buffer = 5; // 5 feet buffer
+    let totalVisionPixels = (visionRange + buffer) * (gridSize / gridDistance) * 2;
+
+    // Window dimensions
+    let windowHeight = window.innerHeight;
+    let windowWidth = window.innerWidth;
+
+    // Calculate required scale
+    let scaleX = windowWidth / totalVisionPixels;
+    let scaleY = windowHeight / totalVisionPixels;
+    let scale = Math.min(scaleX, scaleY, 2); // Ensure scale is not more than 2
+
+    return scale;
+}
+
+function calculateScaleForAllTokens(tokens) {
+
+    let buffer = 5; // 5 feet buffer
+    let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0;
+
+    tokens.forEach(token => {
+
+        let visionRange = token.document.sight.range;
+        let gridSize = canvas.scene.grid.size;
+        let gridDistance = canvas.scene.grid.distance;
+        let visionPixels = (visionRange + buffer) * (gridSize / gridDistance);
+
+        let x1 = token.x - visionPixels;
+        let y1 = token.y - visionPixels;
+        let x2 = token.x + visionPixels;
+        let y2 = token.y + visionPixels;
+
+        minX = Math.min(minX, x1);
+        minY = Math.min(minY, y1);
+        maxX = Math.max(maxX, x2);
+        maxY = Math.max(maxY, y2);
+
+    });
+
+    let totalWidth = maxX - minX;
+    let totalHeight = maxY - minY;
+
+    let windowWidth = window.innerWidth;
+    let windowHeight = window.innerHeight;
+
+    let scaleX = windowWidth / totalWidth;
+    let scaleY = windowHeight / totalHeight;
+    let scale = Math.min(scaleX, scaleY, 2); // Ensure scale is not more than 2
+
+    return scale;
+}
+
+
+function centerOnToken(token, visionZoom=true, closezoom=false) {
+
+    if (visionZoom) {
+
+        if (!token || !canvas.scene || !token.document.sight.range) {
+            console.log("Required elements are missing.");
+            return;
+        }
         
-        // Center and zoom on the token
         canvas.animatePan({
-            x: token.x,
-            y: token.y,
-            scale: scale
+            x: token.document.x + (canvas.scene.grid.size /  2),
+            y: token.document.y + (canvas.scene.grid.size / 2),
+            scale: calculateVisionScaleForToken(token)
         });
-    } else {
-        // Center and zoom on the token
+    }
+
+    else if (closezoom) {
+        
         canvas.animatePan({
-            x: token.x,
-            y: token.y
+            x: token.document.x + (canvas.scene.grid.size / 2),
+            y: token.document.y + (canvas.scene.grid.size / 2),
+            scale: 0.25
+        })
+        
+    } 
+    
+    else {
+
+        canvas.animatePan({
+            x: token.document.x + (canvas.scene.grid.size / 2),
+            y: token.document.y + (canvas.scene.grid.size / 2)
         });
+
     }
 
 }
 
 function canTokenSeeToken(observerToken, targetToken) {
-    
-    // Check if the observer has line of sight to the target
-    let losBlocked = canvas.walls.checkCollision(new Ray(observerToken.center, targetToken.center), {
-        mode: "any",
-        type: "move"
-    });
+
+    let losBlocked = CONFIG.Canvas.polygonBackends.move.testCollision(observerToken.center, targetToken.center, { type: "move", mode: "any" });
     
     if (losBlocked) {
         return false; // Line of sight is blocked
@@ -90,7 +156,7 @@ function canTokenSeeToken(observerToken, targetToken) {
     return false; // Target is out of vision range
 }
 
-function canAnyOwnedTokenSeeMovingToken(movingToken) {
+function canAnyOwnedTokenSeeToken(movingToken) {
     
     // Get all tokens owned by the current user
     let ownedTokens = canvas.tokens.ownedTokens;
@@ -99,10 +165,8 @@ function canAnyOwnedTokenSeeMovingToken(movingToken) {
     return ownedTokens.some(ownedToken => {
 
         // Check line of sight
-        const losBlocked = canvas.walls.checkCollision(new Ray(ownedToken.center, movingToken.center), {
-            mode: "any",
-            type: "move"
-        });
+        let losBlocked = CONFIG.Canvas.polygonBackends.move.testCollision(ownedToken.center, movingToken.center, { type: "move", mode: "any" });
+
         if (losBlocked) return false; // Line of sight is blocked
 
         // Calculate distance between tokens
@@ -121,8 +185,8 @@ function panToCenterpointOfTokens(tokens) {
 
     // Add up the X and Y coordinates of each token
     tokens.forEach(token => {
-        sumX += token.x;
-        sumY += token.y;
+        sumX += token.document.x;
+        sumY += token.document.y;
     });
 
     // Calculate the average X and Y coordinates
@@ -132,10 +196,147 @@ function panToCenterpointOfTokens(tokens) {
     canvas.animatePan({
         x: centerX,
         y: centerY,
-        scale: 0.5
+        scale: calculateScaleForAllTokens(tokens)
     });
 
 }
+
+function findByDocumentActorId(actorId) {
+
+    console.log('resorted to findByActorId');
+
+    let foundEntry = null;
+
+    canvas.tokens.placeables.forEach((value, key) => {
+        if (value.document && value.document.actorId === actorId) {
+            foundEntry = value;
+        }
+    });
+
+    return foundEntry;
+}
+
+let chatMessages = [];
+let intervalId = null;
+
+function processElement() {
+
+    if (chatMessages.length > 0) {
+
+        // Process the first element
+        const chatMessage = chatMessages.shift();
+        displayTextBelowToken(chatMessage);
+
+        // Check if the chatMessages is empty and clear the interval
+        if (chatMessages.length === 0) {
+            clearInterval(intervalId);
+            intervalId = null;
+        }
+    }
+}
+
+function startProcessing(immediate = false) {
+
+    if (intervalId === null) {
+
+        if (immediate) {
+            processElement(); // Process immediately
+            intervalId = setInterval(processElement, 3000);
+        } else {
+            intervalId = setInterval(processElement, 3000);
+            processElement(); // This ensures the first element is processed immediately
+        }
+    }
+}
+
+function addChatMessage(chatMessage) {
+
+    let wasEmpty = chatMessages.length === 0;
+    chatMessages.push(chatMessage);
+    startProcessing(wasEmpty);
+
+}
+
+
+Hooks.on('createChatMessage', function(chatMessage) {
+
+    if (chatMessage.isRoll && chatMessage.rolls) {
+
+        addChatMessage(chatMessage)
+
+    }
+    
+});
+
+function displayTextBelowToken(chatMessage) {
+    
+    if (game.settings.get('monks-common-display', 'playerdata')[game.users.current._id].display === true) {
+
+        let messageString = chatMessage.flavor ? chatMessage.flavor : '';
+
+        let speakerToken = canvas.tokens.get(chatMessage.speaker.token) || findByDocumentActorId(chatMessage.speaker.actor)  
+
+        if (!chatMessage.whisper.length && chatMessage.isRoll && chatMessage.rolls) {
+            messageString = `${messageString}\n ${chatMessage.rolls[0].total}`
+         }
+
+        let flavorTextSprite = new PIXI.Text(messageString, {
+            fontFamily: 'Arial',
+            fontSize: 40,
+            fill: 0xD3D3D3,
+            align: 'center',
+            stroke: 0x000000,
+            strokeThickness: 6
+        });
+
+        flavorTextSprite.alpha = 0.5; 
+        flavorTextSprite.scale.set(0.8);
+
+        let tokenCenterX = speakerToken.x + (canvas.dimensions.size / 2);
+        let tokenBottomY = speakerToken.y + (canvas.dimensions.size * 1.1);
+
+        flavorTextSprite.anchor.set(0.5, 0);
+        flavorTextSprite.x = tokenCenterX;
+        flavorTextSprite.y = tokenBottomY;
+    
+        flavorTextSprite.position.set(tokenCenterX, tokenBottomY - 30);
+
+        canvas.stage.addChild(flavorTextSprite);
+
+        let elapsedTime = 0;
+
+        canvas.app.ticker.add((delta) => {
+
+            elapsedTime += delta;
+
+            const progress = Math.min(elapsedTime / 180, 1); // Normalize progress to [0, 1]
+            flavorTextSprite.alpha = progress; // Fade in
+            flavorTextSprite.scale.x = flavorTextSprite.scale.y = 0.8 + 0.2 * progress; // Scale up from 0.8 to 1
+
+            if (progress === 1) {
+                canvas.stage.removeChild(flavorTextSprite);
+            }
+        });
+        
+        if (canAnyOwnedTokenSeeToken(speakerToken)) {
+
+            centerOnToken(speakerToken, false, true)
+
+        }
+
+
+    }
+    
+}
+
+Hooks.on('deleteCombat', (combat, options, userId) => {
+
+    if (game.settings.get('monks-common-display', 'playerdata')[game.users.current._id].display === true) {
+        canvas.tokens.releaseAll();
+        panToCenterpointOfTokens(canvas.tokens.ownedTokens)
+    }
+
+});
 
 
 Hooks.on('updateCombat', function(combat, html, data, anotherThing) {
@@ -144,39 +345,40 @@ Hooks.on('updateCombat', function(combat, html, data, anotherThing) {
 
         // Get the current combatant token
         let token = combat.combatant.token;
-        
+
         // Animation parameters
-        let targetRotation = (token.flags.orientations?.orientation) * (Math.PI / 180);
+        let targetOrientation = token.flags.orientations?.orientation ?? 0;
+        let targetRotation = targetOrientation * (Math.PI / 180);
+        let currentRotation = canvas.app.stage.rotation;
 
-        if (Number.isNaN(targetRotation)) {
-            targetRotation = 0;
-        }
-
-        const currentRotation = canvas.app.stage.rotation;
-
-        let delta = calculateShortestRotation(currentRotation, targetRotation);
-        let duration = 1; // duration in seconds
-        let rotationPerFrame = delta / (20 * duration);
+        let deltaRotation = calculateShortestRotation(currentRotation, targetRotation);
+        let durationInSeconds = .5;
+        let rotationPerFrame = deltaRotation / (30 * durationInSeconds); // Assuming 60 frames per second
 
         function animate() {
-
-            // debugger;
-
-            if (currentRotation + delta >= targetRotation) {
-                targetRotation = currentRotation + delta;
-            }
-
-            if (canvas.app.stage.rotation != targetRotation) {
-                requestAnimationFrame(animate); // Continue animation while the condition is true
+            if (Math.abs(canvas.app.stage.rotation - targetRotation) > Math.abs(rotationPerFrame)) {
                 canvas.app.stage.rotation += rotationPerFrame;
+                requestAnimationFrame(animate); // Continue animation
+            } else {
+                canvas.app.stage.rotation = targetRotation;
+                finalizeAnimation();
             }
         }
-   
+
+        function finalizeAnimation() {
+            canvas.app.stage.rotation = normalizeRadians(canvas.app.stage.rotation);
+
+            if (canvas.tokens.ownedTokens.includes(canvas.tokens.get(token.id))) {
+                centerOnToken(canvas.tokens.get(token.id));
+                canvas.tokens.get(token.id).control({ releaseOthers: true });
+            } else  {
+                canvas.tokens.releaseAll();
+                panToCenterpointOfTokens(canvas.tokens.ownedTokens)
+            }
+        }
+
         animate();
-        
-        canvas.app.stage.rotation = normalizeRadians(canvas.app.stage.rotation)
-        centerOnToken(token)
-        canvas.tokens.get(token.id).control({releaseOthers: true})
+
         
     } else {
         return;
@@ -184,37 +386,64 @@ Hooks.on('updateCombat', function(combat, html, data, anotherThing) {
 
 })
 
-Hooks.on("refreshToken", (token, updateData, ...args) => {
-    
+// Hooks.on("updateToken", (token, updateData, ...args) => {
+//     console.log('---updateToken---')
+//     console.log(canvas.tokens.get(token.id), updateData, ...args)
+//     console.log('---/updateToken')
+// })
 
-    if (game.settings.get('monks-common-display', 'playerdata')[game.users.current._id].display === true) { 
+Hooks.on("updateToken", (token, updateData, ...args) => {
+
+    // Get the respective tokens
+    let updatedToken = canvas.tokens.get(token.id);
+    let controlledToken = canvas.tokens.controlled[0];
+
+    // Get some info bout' 'em
+    let isTokenOwned = canvas.tokens?.ownedTokens?.includes(updatedToken);
+    let isActiveCombat = game.combats?.active && game.combats?.active?.started;
+    let isTokenMoving = updateData.x || updateData.y || false
+    let isTokenActive = controlledToken?.id === updatedToken?.id
+
+    if (game.settings.get('monks-common-display', 'playerdata')[game.users.current._id]?.display === true) { 
+
+        // For active combats
+        if (isActiveCombat) {
+
+            // When the token's position has been refreshed
+            if (isTokenMoving) {
+                
+                // If there is a controlled token and it's the active token
+                if (controlledToken && isTokenActive) {
+                    centerOnToken(updatedToken, true)
+                }
+
+                // Otherwise, if the token is owned
+                else if (isTokenOwned) {
+                    panToCenterpointOfTokens(canvas.tokens.ownedTokens)
+                }
+                
+                // Otherwise if it's not owned
+                else if (canAnyOwnedTokenSeeToken(updatedToken)) {
+                    panToCenterpointOfTokens(canvas.tokens.ownedTokens.concat([updatedToken]))
+                } else {
+                    return;
+                }
+            }
+                    
+            // Some other things?
+
+        } 
         
-        let observerToken = canvas.tokens.controlled[0];
-        let targetToken = canvas.tokens.get(token.id);
+        // For non-combat scenes, if the token is moving just pan to the centerpoint of all owned tokens
+        else {
 
-        if (observerToken) {
-            
-            if (observerToken.id === targetToken.id) {
-                centerOnToken(observerToken.document)
+            if (isTokenMoving && canAnyOwnedTokenSeeToken(updatedToken)) {
+                panToCenterpointOfTokens(canvas.tokens.ownedTokens.concat([updatedToken]))
+            } else if (isTokenMoving) {
+                panToCenterpointOfTokens(canvas.tokens.ownedTokens);
             }
-
-            else if (canTokenSeeToken(observerToken, targetToken)) {
-                centerOnToken(targetToken.document, false);
-            }
-            
-            else {
-                centerOnToken(observerToken.document)
-            }
-
-        } else {
-
-            if (canAnyOwnedTokenSeeMovingToken(targetToken)) {
-                centerOnToken(targetToken.document, false);
-            } else {
-                panToCenterpointOfTokens(canvas.tokens.ownedTokens)
-            }
-
-        }  
+        }
+       
         
     }
 
