@@ -1,3 +1,66 @@
+let socket;
+
+// Register to get hooks from simple-token-movement
+Hooks.once("socketlib.ready", () => {
+
+    socket = socketlib.registerModule("simple-token-movement");
+
+    socket.register('getZoomLevel', getZoomLevel)
+    socket.register('changeZoomLevel', changeZoomLevel)
+    socket.register('selectOrReleaseToken', selectOrReleaseToken)
+
+});
+
+function selectOrReleaseToken(actorId) {
+
+    // Canvas
+    let token = canvas.tokens.get(actorId) || findByDocumentActorId(actorId);
+    let isTokenActive = token?.controlled;
+
+    let isActiveCombat = game.combats?.active && game.combats?.active?.started;
+
+    if (isActiveCombat) {
+        return;
+    }
+
+    if (game.settings.get('monks-common-display', 'playerdata')[game.users.current._id].display === true) { 
+        
+        if (isTokenActive) {
+            // Release currently controlled token
+            token.release();
+            panToCenterpointOfTokens(canvas.tokens.ownedTokens);
+        } else {
+            // Release all other controlled tokens
+            canvas.tokens.controlled.forEach(t => {
+                if (t.id !== token.id) t.release();
+            });
+
+            // Control the specified token
+            token.control({releaseOthers: true});
+            centerOnToken(token, false, true);
+        }
+    }  
+}
+
+
+function getZoomLevel() {
+    return canvas.scene._viewPosition.scale
+}
+
+function changeZoomLevel(nFeet) {
+
+    let currentViewPosition = canvas.scene._viewPosition;
+
+    canvas.animatePan({
+        x: currentViewPosition.x,
+        y: currentViewPosition.y,
+        scale: calculateScaleForNumberOfFeet(nFeet)
+    })
+
+}
+
+
+
 Hooks.on('renderTokenConfig', (app,[html],data) => {
     
     const currentOrientation = app.document.flags?.orientations?.orientation ?? ''
@@ -33,6 +96,28 @@ function calculateShortestRotation(currentRotation, targetRotation) {
     if (delta < -Math.PI) delta += 2 * Math.PI;
 
     return delta;
+
+}
+
+function calculateScaleForNumberOfFeet(nFeet) {
+
+    let gridDistance = canvas.scene.grid.distance;
+    let gridSize = canvas.scene.grid.size;
+
+    // Calculate total vision area in pixels (vision range + buffer)
+    let buffer = 5; // 5 feet buffer
+    let totalVisionPixels = (nFeet + buffer) * (gridSize / gridDistance) * 2;
+
+    // Window dimensions
+    let windowHeight = window.innerHeight;
+    let windowWidth = window.innerWidth;
+
+    // Calculate required scale
+    let scaleX = windowWidth / totalVisionPixels;
+    let scaleY = windowHeight / totalVisionPixels;
+    let scale = Math.min(scaleX, scaleY, 2); // Ensure scale is not more than 2
+
+    return scale;
 
 }
 
@@ -107,7 +192,7 @@ function calculateScaleForAllTokens(tokens) {
 }
 
 
-function centerOnToken(token, visionZoom=true, closezoom=false) {
+function centerOnToken(token, visionZoom=true, closezoom=false) {    
 
     if (visionZoom) {
 
@@ -115,12 +200,13 @@ function centerOnToken(token, visionZoom=true, closezoom=false) {
             console.log("Required elements are missing.");
             return;
         }
-        
+
         canvas.animatePan({
             x: token.document.x + (canvas.scene.grid.size /  2),
             y: token.document.y + (canvas.scene.grid.size / 2),
-            scale: calculateVisionScaleForToken(token)
+            scale: calculateScaleForNumberOfFeet(30)
         });
+
     }
 
     else if (closezoom) {
@@ -128,7 +214,7 @@ function centerOnToken(token, visionZoom=true, closezoom=false) {
         canvas.animatePan({
             x: token.document.x + (canvas.scene.grid.size / 2),
             y: token.document.y + (canvas.scene.grid.size / 2),
-            scale: 0.25
+            scale: calculateScaleForNumberOfFeet(15)
         })
         
     } 
@@ -348,6 +434,8 @@ Hooks.on('deleteCombat', (combat, options, userId) => {
 
 Hooks.on('updateCombat', function(combat, html, data, anotherThing) {
 
+    // debugger;
+
     if (game.settings.get('monks-common-display', 'playerdata')[game.users.current._id].display === true) {
 
         // Get the current combatant token
@@ -393,12 +481,6 @@ Hooks.on('updateCombat', function(combat, html, data, anotherThing) {
 
 })
 
-// Hooks.on("updateToken", (token, updateData, ...args) => {
-//     console.log('---updateToken---')
-//     console.log(canvas.tokens.get(token.id), updateData, ...args)
-//     console.log('---/updateToken')
-// })
-
 Hooks.on("updateToken", (token, updateData, ...args) => {
 
     // Get the respective tokens
@@ -421,7 +503,7 @@ Hooks.on("updateToken", (token, updateData, ...args) => {
                 
                 // If there is a controlled token and it's the active token
                 if (controlledToken && isTokenActive) {
-                    centerOnToken(updatedToken, true)
+                    centerOnToken(updatedToken, false, false)
                 }
 
                 // Otherwise, if the token is owned
@@ -444,7 +526,9 @@ Hooks.on("updateToken", (token, updateData, ...args) => {
         // For non-combat scenes, if the token is moving just pan to the centerpoint of all owned tokens
         else {
 
-            if (isTokenMoving && canAnyOwnedTokenSeeToken(updatedToken)) {
+            if (isTokenActive) {
+                centerOnToken(updatedToken, false, false)
+            } else if (isTokenMoving && canAnyOwnedTokenSeeToken(updatedToken)) {
                 panToCenterpointOfTokens(canvas.tokens.ownedTokens.concat([updatedToken]))
             } else if (isTokenMoving) {
                 panToCenterpointOfTokens(canvas.tokens.ownedTokens);
