@@ -105,7 +105,7 @@ function calculateScaleForNumberOfFeet(nFeet) {
     let gridSize = canvas.scene.grid.size;
 
     // Calculate total vision area in pixels (vision range + buffer)
-    let buffer = 5; // 5 feet buffer
+    let buffer = canvas.scene.grid.distance; // 5 feet buffer
     let totalVisionPixels = (nFeet + buffer) * (gridSize / gridDistance) * 2;
 
     // Window dimensions
@@ -149,22 +149,30 @@ function calculateVisionScaleForToken(token) {
 
 function calculateScaleForAllTokens(tokens) {
 
-    let buffer = 5; // 5 feet buffer
+    let buffer = canvas.scene.grid.size;
     let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0;
+    let totalVisionRange = 0, ownedTokensCount = 0;
 
+    let gridSize = canvas.scene.grid.size;
+    let gridDistance = canvas.scene.grid.distance;
+
+    // Calculate total vision range for owned tokens
     tokens.forEach(token => {
-
-        let visionRange = token.document.sight.range;
-        let gridSize = canvas.scene.grid.size;
-        let gridDistance = canvas.scene.grid.distance;
-
-        let visionPixels;
-        // Only include vision for owned tokens
         if (canvas.tokens.ownedTokens.includes(token)) {
-            visionPixels = (visionRange + buffer) * (gridSize / gridDistance);
-        } else {
-            visionPixels = 0;
+
+            // NOTE - I'm capping the vision range at 30 for now, anything else just seems to zoomed out
+            totalVisionRange += Math.min(token.document.sight.range, 30);
+            ownedTokensCount++;
         }
+    });
+
+    // Calculate average vision range
+    let averageVisionRange = ownedTokensCount > 0 ? totalVisionRange / ownedTokensCount : 0;
+
+    // Calculate scale considering average vision range
+    tokens.forEach(token => {
+        
+        let visionPixels = (averageVisionRange) * (gridSize / gridDistance);
         
         let x1 = token.x - visionPixels;
         let y1 = token.y - visionPixels;
@@ -190,6 +198,7 @@ function calculateScaleForAllTokens(tokens) {
 
     return scale;
 }
+
 
 
 function centerOnToken(token, visionZoom=true, closezoom=false) {    
