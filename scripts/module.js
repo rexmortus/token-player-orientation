@@ -1,4 +1,6 @@
-let socket;
+let socket
+let viewMode
+let miniMap
 
 // Register to get hooks from simple-token-movement
 Hooks.once("socketlib.ready", () => {
@@ -10,6 +12,48 @@ Hooks.once("socketlib.ready", () => {
     socket.register('selectOrReleaseToken', selectOrReleaseToken)
 
 });
+
+Hooks.once('ready', () => {
+
+    canvas.tokens.releaseAll()
+    
+
+});
+
+Hooks.on("canvasReady", canvas => {
+    displayViewMode()
+});
+
+function displayViewMode() {
+
+    viewMode = new PIXI.Text("Party", {
+        fontFamily: 'Arial', 
+        fontSize: 24, 
+        fill: 0xffffff, 
+        align: 'center'
+    });
+    
+    viewMode.anchor.set(0.5, 0); // Center anchor horizontally
+    viewMode.x = window.innerWidth / 2; // Position horizontally at center
+    viewMode.y = window.innerHeight - 30; // Position 30px from the bottom of the window
+
+    canvas.overlay.addChild(viewMode); // Add viewMode to the stage for visibility
+
+    // Update position on window resize
+    window.addEventListener('resize', () => {
+
+        viewMode.x = window.innerWidth / 2;
+        viewMode.y = window.innerHeight - 30;
+
+    });
+
+}
+
+function updateViewMode(text) {
+
+    viewMode.text = text;
+
+}
 
 function selectOrReleaseToken(actorId) {
 
@@ -203,6 +247,8 @@ function calculateScaleForAllTokens(tokens) {
 
 function centerOnToken(token, visionZoom=true, closezoom=false) {    
 
+    updateViewMode(token.name)
+
     if (visionZoom) {
 
         if (!token || !canvas.scene || !token.document.sight.range) {
@@ -280,6 +326,8 @@ function canAnyOwnedTokenSeeToken(movingToken) {
 }
 
 function panToCenterpointOfTokens(tokens) {
+
+    updateViewMode('Party')
 
     // Initialize sums of X and Y coordinates
     let sumX = 0;
@@ -436,54 +484,64 @@ Hooks.on('deleteCombat', (combat, options, userId) => {
     if (game.settings.get('monks-common-display', 'playerdata')[game.users.current._id].display === true) {
         canvas.tokens.releaseAll();
         panToCenterpointOfTokens(canvas.tokens.ownedTokens)
+        
     }
 
 });
 
+function rotateStageAndOverlayForToken(token) {
+
+    // Animation parameters
+    let targetOrientation = token.flags.orientations?.orientation ?? 0;
+    let targetRotation = targetOrientation * (Math.PI / 180);
+    let currentRotation = canvas.app.stage.rotation;
+
+    let deltaRotation = calculateShortestRotation(currentRotation, targetRotation);
+    let durationInSeconds = .5;
+    let rotationPerFrame = deltaRotation / (30 * durationInSeconds); // Assuming 60 frames per second
+
+    function animate() {
+
+        if (Math.abs(canvas.app.stage.rotation - targetRotation) > Math.abs(rotationPerFrame)) {
+
+            canvas.overlay.rotation += rotationPerFrame;
+            canvas.app.stage.rotation += rotationPerFrame;
+            requestAnimationFrame(animate); // Continue animation
+
+        } else {
+
+            canvas.overlay.rotation = targetRotation;
+            canvas.app.stage.rotation = targetRotation;
+            finalizeAnimation();
+
+        }
+    }
+
+    function finalizeAnimation() {
+
+        canvas.app.stage.rotation = normalizeRadians(canvas.app.stage.rotation)
+        canvas.overlay.rotation = normalizeRadians(canvas.overlay.rotation)
+
+        if (canvas.tokens.ownedTokens.includes(canvas.tokens.get(token.id))) {
+
+            centerOnToken(canvas.tokens.get(token.id));
+            canvas.tokens.get(token.id).control({ releaseOthers: true });
+
+        } else  {
+
+            canvas.tokens.releaseAll();
+            panToCenterpointOfTokens(canvas.tokens.ownedTokens)
+
+        }
+    }
+
+    animate();
+}
 
 Hooks.on('updateCombat', function(combat, html, data, anotherThing) {
 
-    // debugger;
-
     if (game.settings.get('monks-common-display', 'playerdata')[game.users.current._id].display === true) {
-
-        // Get the current combatant token
-        let token = combat.combatant.token;
-
-        // Animation parameters
-        let targetOrientation = token.flags.orientations?.orientation ?? 0;
-        let targetRotation = targetOrientation * (Math.PI / 180);
-        let currentRotation = canvas.app.stage.rotation;
-
-        let deltaRotation = calculateShortestRotation(currentRotation, targetRotation);
-        let durationInSeconds = .5;
-        let rotationPerFrame = deltaRotation / (30 * durationInSeconds); // Assuming 60 frames per second
-
-        function animate() {
-            if (Math.abs(canvas.app.stage.rotation - targetRotation) > Math.abs(rotationPerFrame)) {
-                canvas.app.stage.rotation += rotationPerFrame;
-                requestAnimationFrame(animate); // Continue animation
-            } else {
-                canvas.app.stage.rotation = targetRotation;
-                finalizeAnimation();
-            }
-        }
-
-        function finalizeAnimation() {
-            canvas.app.stage.rotation = normalizeRadians(canvas.app.stage.rotation);
-
-            if (canvas.tokens.ownedTokens.includes(canvas.tokens.get(token.id))) {
-                centerOnToken(canvas.tokens.get(token.id));
-                canvas.tokens.get(token.id).control({ releaseOthers: true });
-            } else  {
-                canvas.tokens.releaseAll();
-                panToCenterpointOfTokens(canvas.tokens.ownedTokens)
-            }
-        }
-
-        animate();
-
-        
+        rotateStageAndOverlayForToken(combat.combatant.token);
     } else {
         return;
     }
