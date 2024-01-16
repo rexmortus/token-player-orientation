@@ -16,12 +16,9 @@ Hooks.once("socketlib.ready", () => {
 Hooks.once('ready', () => {
 
     canvas.tokens.releaseAll()
+    displayViewMode();
     
 
-});
-
-Hooks.on("canvasReady", canvas => {
-    displayViewMode()
 });
 
 function displayViewMode() {
@@ -230,8 +227,8 @@ function calculateScaleForAllTokens(tokens) {
 
     });
 
-    let totalWidth = maxX - minX;
-    let totalHeight = maxY - minY;
+    let totalWidth = (maxX - minX) + (canvas.grid.size * 2);
+    let totalHeight = (maxY - minY) + (canvas.grid.size * 2);
 
     let windowWidth = window.innerWidth;
     let windowHeight = window.innerHeight;
@@ -340,8 +337,8 @@ function panToCenterpointOfTokens(tokens) {
     });
 
     // Calculate the average X and Y coordinates
-    let centerX = sumX / tokens.length;
-    let centerY = sumY / tokens.length;
+    let centerX = (sumX / tokens.length) + (canvas.grid.size / 2);
+    let centerY = (sumY / tokens.length) + (canvas.grid.size / 2);
 
     canvas.animatePan({
         x: centerX,
