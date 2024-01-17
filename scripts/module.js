@@ -1,5 +1,6 @@
 let socket
 let viewMode
+let clockView
 let miniMap
 
 // Register to get hooks from simple-token-movement
@@ -15,10 +16,14 @@ Hooks.once("socketlib.ready", () => {
 
 Hooks.once('ready', () => {
 
-    canvas.tokens.releaseAll()
-    displayViewMode();
-    
+    if (game.settings.get('monks-common-display', 'playerdata')[game.users.current._id]?.display === true) {
 
+        canvas.tokens.releaseAll()
+        displayViewMode()
+        displayGameClock()
+    
+    }
+    
 });
 
 function displayViewMode() {
@@ -42,6 +47,40 @@ function displayViewMode() {
         viewMode.x = window.innerWidth / 2;
         viewMode.y = window.innerHeight - 30;
 
+    });
+
+}
+
+
+function displayGameClock() {
+
+    let currentDatetimeDisplay = `${SimpleCalendar.api.currentDateTimeDisplay().date} - ${SimpleCalendar.api.currentDateTimeDisplay().time}`
+
+    clockView = new PIXI.Text(currentDatetimeDisplay, {
+        fontFamily: 'Arial', 
+        fontSize: 14, 
+        fill: 0xffffff, 
+        align: 'center',
+        opacity: 0.75
+    });
+    
+    clockView.anchor.set(0.5, 0); // Center anchor horizontally
+    clockView.x = window.innerWidth / 2; // Position horizontally at center
+    clockView.y = 15; // Position 30px from the bottom of the window
+    clockView.alpha = 0.5
+
+    canvas.overlay.addChild(clockView); // Add clockView to the stage for visibility
+
+    // Update position on window resize
+    window.addEventListener('resize', () => {
+
+        clockView.x = window.innerWidth / 2;
+        clockView.y = 15;
+
+    });
+
+    canvas.app.ticker.add(() => {
+        clockView.text = `${SimpleCalendar.api.currentDateTimeDisplay().date} - ${SimpleCalendar.api.currentDateTimeDisplay().time}`;
     });
 
 }
