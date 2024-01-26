@@ -456,7 +456,7 @@ Hooks.on('createChatMessage', function(chatMessage) {
 
 function displayTextBelowToken(chatMessage) {
     
-    if (game.settings.get('monks-common-display', 'playerdata')[game.users.current._id].display === true) {
+    if (game.settings.get('monks-common-display', 'playerdata')[game.users.current._id]?.display === true) {
 
         let messageString = chatMessage.flavor ? chatMessage.flavor : '';
 
@@ -517,7 +517,8 @@ function displayTextBelowToken(chatMessage) {
 
 Hooks.on('deleteCombat', (combat, options, userId) => {
 
-    if (game.settings.get('monks-common-display', 'playerdata')[game.users.current._id].display === true) {
+    if (game.settings.get('monks-common-display', 'playerdata')[game.users.current._id]?.display === true) {
+        rotateStageTo(0);
         canvas.tokens.releaseAll();
         panToCenterpointOfTokens(canvas.tokens.ownedTokens)
         
@@ -525,59 +526,70 @@ Hooks.on('deleteCombat', (combat, options, userId) => {
 
 });
 
-function rotateStageAndOverlayForToken(token) {
+function rotateStageTo(targetOrientation, token = null, duration = 1) {
 
-    // Animation parameters
-    let targetOrientation = token.flags.orientations?.orientation ?? 0;
-    let targetRotation = targetOrientation * (Math.PI / 180);
-    let currentRotation = canvas.app.stage.rotation;
+    const targetRotation = targetOrientation * (Math.PI / 180);
+    const initialRotation = canvas.app.stage.rotation;
+    const frameRate = 60;
+    const totalFrames = duration * frameRate;
 
-    let deltaRotation = calculateShortestRotation(currentRotation, targetRotation);
-    let durationInSeconds = .5;
-    let rotationPerFrame = deltaRotation / (30 * durationInSeconds); // Assuming 60 frames per second
+    const deltaRotation = calculateShortestRotation(initialRotation, targetRotation);
 
-    function animate() {
+    let elapsedFrames = 0;
 
-        if (Math.abs(canvas.app.stage.rotation - targetRotation) > Math.abs(rotationPerFrame)) {
+     function animate() {
 
-            canvas.overlay.rotation += rotationPerFrame;
-            canvas.app.stage.rotation += rotationPerFrame;
-            requestAnimationFrame(animate); // Continue animation
+        if (elapsedFrames <= totalFrames) {
+
+            let currentRotation = initialRotation + ((deltaRotation / totalFrames) * elapsedFrames);
+            canvas.app.stage.rotation = currentRotation;
+            elapsedFrames++;
 
         } else {
 
-            canvas.overlay.rotation = targetRotation;
-            canvas.app.stage.rotation = targetRotation;
             finalizeAnimation();
+            canvas.app.ticker.remove(animate)
 
         }
     }
 
     function finalizeAnimation() {
 
-        canvas.app.stage.rotation = normalizeRadians(canvas.app.stage.rotation)
-        canvas.overlay.rotation = normalizeRadians(canvas.overlay.rotation)
+        if (token) {
 
-        if (canvas.tokens.ownedTokens.includes(canvas.tokens.get(token.id))) {
+            if (canvas.tokens.ownedTokens.includes(canvas.tokens.get(token.id))) {
 
-            centerOnToken(canvas.tokens.get(token.id));
-            canvas.tokens.get(token.id).control({ releaseOthers: true });
-
-        } else  {
-
-            canvas.tokens.releaseAll();
-            panToCenterpointOfTokens(canvas.tokens.ownedTokens)
-
+                centerOnToken(canvas.tokens.get(token.id));
+                canvas.tokens.get(token.id).control({ releaseOthers: true });
+    
+            } else  {
+    
+                canvas.tokens.releaseAll();
+                panToCenterpointOfTokens(canvas.tokens.ownedTokens)
+    
+            }
         }
+
+        canvas.app.stage.rotation = targetOrientation * (Math.PI / 180);
+
     }
 
-    animate();
+    // If there a rotation to do, do it!
+    if (deltaRotation !== 0) {
+        canvas.app.ticker.add(animate)
+    } 
+    // Otherwise, just call finalise animation which will do the appropriate panning
+    else {
+        finalizeAnimation()
+    }
+
+    
 }
 
-Hooks.on('updateCombat', function(combat, html, data, anotherThing) {
+Hooks.on('updateCombat', function(combat) {
 
-    if (game.settings.get('monks-common-display', 'playerdata')[game.users.current._id].display === true) {
-        rotateStageAndOverlayForToken(combat.combatant.token);
+    if (game.settings.get('monks-common-display', 'playerdata')[game.users.current._id]?.display === true) {
+        rotateStageTo(combat.combatant.token.flags.orientations?.orientation ?? 0, combat.combatant.token, .5);
     } else {
         return;
     }
